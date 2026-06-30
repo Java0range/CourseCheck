@@ -1,0 +1,9 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb_cc
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: CourseCheck1337
+    ports:
+      - "27017:27017"
