@@ -1,10 +1,8 @@
-from dataclasses import dataclass
 from typing import Optional
 
 import bcrypt
 from beanie import PydanticObjectId
 from fastapi import HTTPException, status
-from passlib.context import CryptContext
 
 from src.users.documents import Permissions, UsersDocument
 from src.users.schemas import (
@@ -14,22 +12,33 @@ from src.users.schemas import (
 )
 
 
-@dataclass
-class SolveBugBcryptWarning:
-    __version__: str = getattr(bcrypt, "__version__")
-
-
-setattr(bcrypt, "__about__", SolveBugBcryptWarning())
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 async def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")
+
+    if len(password_bytes) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пароль не должен быть длиннее 72 байт",
+        )
+
+    hashed_password = bcrypt.hashpw(
+        password_bytes,
+        bcrypt.gensalt(),
+    )
+
+    return hashed_password.decode("utf-8")
 
 
 async def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    plain_password_bytes = plain_password.encode("utf-8")
+
+    if len(plain_password_bytes) > 72:
+        return False
+
+    return bcrypt.checkpw(
+        plain_password_bytes,
+        hashed_password.encode("utf-8"),
+    )
 
 
 def parse_object_id(value: str, error_text: str = "Неверный id") -> PydanticObjectId:
