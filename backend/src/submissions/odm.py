@@ -13,8 +13,24 @@ from src.users.documents import Permissions, UsersDocument
 from src.users.odm import AsyncUsersODM, parse_object_id
 
 
+SUBMITTED_MARKER = "{[submitted]}"
+FINAL_TEACHER_STATUSES = {
+    SubmissionStatus.CREDITED,
+    SubmissionStatus.NOT_CREDITED,
+}
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def clean_ai_comment(comment: str) -> str:
+    return comment.replace(SUBMITTED_MARKER, "").strip()
+
+
+def ai_comment_is_positive(comment: str) -> bool:
+    stripped_lines = [line.strip() for line in comment.splitlines() if line.strip()]
+    return bool(stripped_lines) and stripped_lines[-1] == SUBMITTED_MARKER
 
 
 class AsyncSubmissionsODM:
@@ -76,8 +92,12 @@ class AsyncSubmissionsODM:
             teacher_id=course_offering.teacher_id,
             file_id=file_document.id,
             attempt_no=attempt_no,
-            status=SubmissionStatus.SUBMITTED,
+            status=SubmissionStatus.ACCEPTED_FOR_CHECKING,
             student_comment=student_comment,
+            ai_comment=None,
+            ai_error=None,
+            ai_started_at=None,
+            ai_checked_at=None,
         )
 
         await submission.insert()
@@ -273,6 +293,66 @@ class AsyncSubmissionsODM:
         return submission
 
     @staticmethod
+    async def mark_ai_check_started(
+        submission_id: str | PydanticObjectId,
+    ) -> SubmissionsDocument:
+        submission = await AsyncSubmissionsODM.get_submission_by_id(submission_id)
+
+        if submission.status in FINAL_TEACHER_STATUSES:
+            return submission
+
+        submission.status = SubmissionStatus.CHECKING
+        submission.ai_error = None
+        submission.ai_started_at = utc_now()
+        submission.updated_at = utc_now()
+
+        await submission.save()
+        return submission
+
+    @staticmethod
+    async def apply_ai_check_result(
+        submission_id: str | PydanticObjectId,
+        ai_comment: str,
+    ) -> SubmissionsDocument:
+        submission = await AsyncSubmissionsODM.get_submission_by_id(submission_id)
+
+        positive_result = ai_comment_is_positive(ai_comment)
+        now = utc_now()
+
+        submission.ai_comment = clean_ai_comment(ai_comment)
+        submission.ai_error = None
+        submission.ai_checked_at = now
+        submission.updated_at = now
+
+        if submission.status not in FINAL_TEACHER_STATUSES:
+            submission.status = (
+                SubmissionStatus.AI_ACCEPTED
+                if positive_result
+                else SubmissionStatus.AI_REJECTED
+            )
+
+        await submission.save()
+        return submission
+
+    @staticmethod
+    async def mark_ai_check_failed(
+        submission_id: str | PydanticObjectId,
+        error_message: str,
+    ) -> SubmissionsDocument:
+        submission = await AsyncSubmissionsODM.get_submission_by_id(submission_id)
+
+        now = utc_now()
+        submission.ai_error = error_message
+        submission.ai_checked_at = now
+        submission.updated_at = now
+
+        if submission.status not in FINAL_TEACHER_STATUSES:
+            submission.status = SubmissionStatus.CHECK_FAILED
+
+        await submission.save()
+        return submission
+
+    @staticmethod
     async def to_submission_response(
         submission: SubmissionsDocument,
     ) -> SubmissionResponseSchema:
@@ -287,6 +367,10 @@ class AsyncSubmissionsODM:
             attempt_no=submission.attempt_no,
             status=submission.status,
             student_comment=submission.student_comment,
+            ai_comment=submission.ai_comment,
+            ai_error=submission.ai_error,
+            ai_started_at=submission.ai_started_at,
+            ai_checked_at=submission.ai_checked_at,
             teacher_comment=submission.teacher_comment,
             reviewed_by=submission.reviewed_by,
             reviewed_at=submission.reviewed_at,
@@ -348,6 +432,10 @@ class AsyncSubmissionsODM:
             attempt_no=submission.attempt_no,
             status=submission.status,
             student_comment=submission.student_comment,
+            ai_comment=submission.ai_comment,
+            ai_error=submission.ai_error,
+            ai_started_at=submission.ai_started_at,
+            ai_checked_at=submission.ai_checked_at,
             teacher_comment=submission.teacher_comment,
             reviewed_by=submission.reviewed_by,
             reviewed_at=submission.reviewed_at,

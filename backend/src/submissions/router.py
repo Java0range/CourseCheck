@@ -1,10 +1,14 @@
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 
+from src.submissions.broker import publish_submission_check_requested
 from src.submissions.documents import SubmissionStatus
 from src.submissions.odm import AsyncSubmissionsODM
-from src.submissions.schemas import ReviewSubmissionSchema
+from src.submissions.schemas import (
+    ReviewSubmissionSchema,
+    SubmitCourseworkAcceptedResponseSchema,
+)
 from src.users.documents import Permissions
 from src.users.utils import get_current_user, permission_required, role_required
 
@@ -12,7 +16,10 @@ from src.users.utils import get_current_user, permission_required, role_required
 router = APIRouter(tags=["Submissions"])
 
 
-@router.post("/course-offerings/{course_offering_id}/submit")
+@router.post(
+    "/course-offerings/{course_offering_id}/submit",
+    response_model=SubmitCourseworkAcceptedResponseSchema,
+)
 @role_required(Permissions.STUDENT)
 async def submit_coursework(
     request: Request,
@@ -29,7 +36,29 @@ async def submit_coursework(
         student_comment=student_comment,
     )
 
-    return await AsyncSubmissionsODM.to_full_submission_response(submission)
+    try:
+        await publish_submission_check_requested(str(submission.id))
+    except Exception as exc:
+        await AsyncSubmissionsODM.mark_ai_check_failed(
+            submission_id=submission.id,
+            error_message=f"Не удалось поставить задачу ИИ-проверки в очередь: {exc}",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Сдача сохранена, но отправка на ИИ-проверку не удалась. "
+                "Повторите попытку позже или обратитесь к администратору."
+            ),
+        ) from exc
+
+    refreshed_submission = await AsyncSubmissionsODM.get_submission_by_id(submission.id)
+
+    return SubmitCourseworkAcceptedResponseSchema(
+        message="Курсовая принята на проверку",
+        submission=await AsyncSubmissionsODM.to_full_submission_response(
+            refreshed_submission
+        ),
+    )
 
 
 @router.get("/submissions/my")

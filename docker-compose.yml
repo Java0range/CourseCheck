@@ -7,3 +7,12 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: CourseCheck1337
     ports:
       - "27017:27017"
+  rabbitmq:
+    image: rabbitmq:management-alpine
+    container_name: rabbitmq_cc
+    environment:
+      - RABBITMQ_DEFAULT_USER=root
+      - RABBITMQ_DEFAULT_PASS=CourseCheck1337
+    ports:
+      - "15672:15672"
+      - "5672:5672"

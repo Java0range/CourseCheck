@@ -29,6 +29,11 @@ class SubmissionResponseSchema(BaseModel):
 
     student_comment: Optional[str] = None
 
+    ai_comment: Optional[str] = None
+    ai_error: Optional[str] = None
+    ai_started_at: Optional[datetime] = None
+    ai_checked_at: Optional[datetime] = None
+
     teacher_comment: Optional[str] = None
     reviewed_by: Optional[PydanticObjectId] = None
     reviewed_at: Optional[datetime] = None
@@ -49,3 +54,13 @@ class SubmissionFullResponseSchema(SubmissionResponseSchema):
     file_content_type: Optional[str] = None
 
     coursework_title: Optional[str] = None
+
+
+class SubmitCourseworkAcceptedResponseSchema(BaseModel):
+    message: str
+    submission: SubmissionFullResponseSchema
+
+
+class SubmissionCheckRequestedMessage(BaseModel):
+    submission_id: str
+    requested_at: datetime

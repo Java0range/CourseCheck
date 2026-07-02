@@ -13,15 +13,10 @@ def utc_now() -> datetime:
 
 class SubmissionStatus(str, Enum):
     """
-    Жизненный цикл сдачи:
-    - accepted_for_checking: API принял файл и поставил задачу ИИ-проверки в очередь.
-    - checking: микросервис взял задачу в работу.
-    - ai_accepted: ИИ считает, что работа соответствует требованиям.
-    - ai_rejected: ИИ нашёл замечания.
-    - check_failed: техническая ошибка ИИ-проверки.
-    - credited / not_credited: финальное решение преподавателя.
+    Local copy of the submission status enum.
 
-    submitted оставлен для обратной совместимости со старыми документами.
+    The collection is shared with the API, but the worker is a separate service,
+    so it keeps its own enum instead of importing src.submissions.documents.
     """
 
     SUBMITTED = "submitted"
@@ -32,6 +27,12 @@ class SubmissionStatus(str, Enum):
     CHECK_FAILED = "check_failed"
     CREDITED = "credited"
     NOT_CREDITED = "not_credited"
+
+
+FINAL_TEACHER_STATUSES = {
+    SubmissionStatus.CREDITED,
+    SubmissionStatus.NOT_CREDITED,
+}
 
 
 class SubmissionsDocument(Document):
@@ -80,5 +81,62 @@ class SubmissionsDocument(Document):
             IndexModel([("teacher_id", ASCENDING)]),
             IndexModel([("status", ASCENDING)]),
             IndexModel([("submitted_at", DESCENDING)]),
-            IndexModel([("ai_checked_at", DESCENDING)]),
+        ]
+
+
+class FilesDocument(Document):
+    owner_id: PydanticObjectId
+
+    original_name: str
+    stored_name: str
+    path: str
+
+    content_type: Optional[str] = None
+    size: int = 0
+
+    uploaded_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "files"
+        indexes = [
+            IndexModel([("owner_id", ASCENDING), ("uploaded_at", DESCENDING)]),
+            IndexModel([("stored_name", ASCENDING)], unique=True),
+        ]
+
+
+class CourseOfferingStatus(str, Enum):
+    ACTIVE = "active"
+    CLOSED = "closed"
+    ARCHIVED = "archived"
+
+
+class CourseOfferingsDocument(Document):
+    discipline_id: PydanticObjectId
+    group_id: PydanticObjectId
+    teacher_id: PydanticObjectId
+
+    coursework_title: str
+    coursework_desc: str = ""
+
+    deadline_at: Optional[datetime] = None
+
+    status: CourseOfferingStatus = CourseOfferingStatus.ACTIVE
+
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "course_offerings"
+        indexes = [
+            IndexModel(
+                [
+                    ("discipline_id", ASCENDING),
+                    ("group_id", ASCENDING),
+                ],
+                unique=True,
+            ),
+            IndexModel([("teacher_id", ASCENDING)]),
+            IndexModel([("group_id", ASCENDING)]),
+            IndexModel([("discipline_id", ASCENDING)]),
+            IndexModel([("status", ASCENDING)]),
         ]

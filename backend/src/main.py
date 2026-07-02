@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     client = AsyncMongoClient(config.get_mongo_url())
 
     await init_beanie(
-        database=client.kinohome,
+        database=client.CourseCheck,
         document_models=[
             UsersDocument,
             GroupsDocument,
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
         ],
     )
 
-    await AsyncODM.insert_root()
+    # await AsyncODM.insert_root()
 
     yield
 
